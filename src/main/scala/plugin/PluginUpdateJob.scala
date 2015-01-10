@@ -1,12 +1,13 @@
 package plugin
 
-import util.Directory._
 import org.eclipse.jgit.api.Git
-import org.slf4j.LoggerFactory
-import org.quartz.{Scheduler, JobExecutionContext, Job}
 import org.quartz.JobBuilder._
-import org.quartz.TriggerBuilder._
 import org.quartz.SimpleScheduleBuilder._
+import org.quartz.TriggerBuilder._
+import org.quartz.{Job, JobExecutionContext, Scheduler}
+import org.slf4j.LoggerFactory
+import service.ProxyService
+import util.Directory._
 
 class PluginUpdateJob extends Job {
 
@@ -16,7 +17,6 @@ class PluginUpdateJob extends Job {
   /**
    * Clone or pull all plugin repositories
    *
-   * TODO Support plugin repository access through the proxy server
    */
   override def execute(context: JobExecutionContext): Unit = {
     try {
@@ -33,7 +33,13 @@ class PluginUpdateJob extends Job {
             Git.open(repo).pull().call()
           } else {
             // clone if the repository is not exist
-            Git.cloneRepository().setURI(repository.url).setDirectory(repo).call()
+            val git = Git.cloneRepository().setURI(repository.url).setDirectory(repo).call()
+            val repositoryConfig = git.getRepository.getConfig
+
+            if (ProxyService.isUseProxy) {
+              repositoryConfig.setString("remote", "origin", "proxy", ProxyService.proxyAddress)
+              repositoryConfig.save()
+            }
           }
         }
         logger.info("End plugin information updating")
@@ -48,7 +54,6 @@ class PluginUpdateJob extends Job {
 }
 
 object PluginUpdateJob {
-
   def schedule(scheduler: Scheduler): Unit = {
     val job = newJob(classOf[PluginUpdateJob])
       .withIdentity("pluginUpdateJob")
